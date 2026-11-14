@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>4DOF 로봇암 시뮬레이터</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='6' y='26' width='20' height='4' fill='%233d4554'/%3E%3Cpath d='M16 26V14L26 8' stroke='%23f0a030' stroke-width='4' fill='none' stroke-linecap='round'/%3E%3C/svg%3E" />
+  <script type="module" crossorigin src="./assets/index-C_3VO8Rr.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-Ct9HTDpn.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">4DOF 로봇암 디지털트윈 시뮬레이터</div>
+    <div class="topbar-right">
+      <span id="mode_badge" class="badge badge-sim">시뮬레이션 모드</span>
+      <span id="serial_hint" class="hint"></span>
+      <button id="btn_connect" class="btn btn-primary">아두이노 연결</button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <!-- 3D 뷰 + 하단 타임라인 -->
+    <section class="stage">
+      <div id="viewport" class="viewport">
+        <div class="hud">
+          <div id="hud_tcp">TCP: -</div>
+          <div id="hud_servo">서보: -</div>
+          <div class="hud-help">드래그: 회전 · 우클릭 드래그: 이동 · 휠: 확대 · 바닥 더블클릭: IK 목표 지정</div>
+        </div>
+      </div>
+
+      <div class="dock">
+        <div class="dock-controls">
+          <button id="btn_step_prev" class="btn btn-icon" title="이전 단계">⏮</button>
+          <button id="btn_play" class="btn btn-icon btn-primary" title="재생/일시정지">▶</button>
+          <button id="btn_step_next" class="btn btn-icon" title="다음 단계">⏭</button>
+          <button id="btn_stop" class="btn btn-icon" title="처음으로">■</button>
+          <select id="sel_speed" title="재생 속도">
+            <option value="0.25">0.25x</option>
+            <option value="0.5">0.5x</option>
+            <option value="1" selected>1x</option>
+            <option value="2">2x</option>
+          </select>
+          <input id="rng_time" type="range" min="0" max="1000" value="0" step="1" disabled />
+          <span id="lbl_time" class="mono">0.00 / 0.00 s</span>
+        </div>
+        <div id="lbl_step" class="step-label">재생할 타임라인이 없습니다. [Pick &amp; Place] 또는 [시퀀스] 탭에서 생성하세요.</div>
+        <div class="chart-wrap"><canvas id="chart_canvas"></canvas></div>
+      </div>
+    </section>
+
+    <!-- 오른쪽 패널 -->
+    <aside class="panel">
+      <nav class="tabs">
+        <button class="tab active" data-tab="tab_fk">FK 제어</button>
+        <button class="tab" data-tab="tab_ik">IK 제어</button>
+        <button class="tab" data-tab="tab_pp">Pick &amp; Place</button>
+        <button class="tab" data-tab="tab_seq">시퀀스</button>
+        <button class="tab" data-tab="tab_learn">학습</button>
+        <button class="tab" data-tab="tab_settings">설정</button>
+      </nav>
+
+      <!-- FK 제어 -->
+      <section id="tab_fk" class="tab-body active">
+        <h3>서보 각도 직접 제어 (정기구학)</h3>
+        <p class="desc">각 서보 각도(0~180°)를 바꾸면 집게 끝(TCP) 좌표가 계산됩니다.</p>
+        <div id="servo_sliders"></div>
+        <div class="row-buttons">
+          <button id="btn_home" class="btn">Home 자세</button>
+          <button id="btn_grip_open" class="btn">집게 열기</button>
+          <button id="btn_grip_close" class="btn">집게 닫기</button>
+          <button id="btn_add_keyframe_fk" class="btn">현재 자세 → 키프레임</button>
+        </div>
+        <h4>결과</h4>
+        <table class="kv">
+          <tr><th>관절각 θ1, θ2, θ3</th><td id="fk_joint" class="mono">-</td></tr>
+          <tr><th>TCP (x, y, z)</th><td id="fk_tcp" class="mono">-</td></tr>
+          <tr><th>수평 거리 r</th><td id="fk_r" class="mono">-</td></tr>
+          <tr><th>집게 기울기 (θ2+θ3)</th><td id="fk_pitch" class="mono">-</td></tr>
+        </table>
+      </section>
+
+      <!-- IK 제어 -->
+      <section id="tab_ik" class="tab-body">
+        <h3>목표 좌표로 제어 (역기구학)</h3>
+        <p class="desc">집게 끝이 갈 좌표를 입력하면 각 서보 각도를 계산합니다. 3D 화면의 바닥을 더블클릭해도 됩니다.</p>
+        <div class="grid3">
+          <label>x (mm)<input id="ik_x" type="number" step="1" value="140" /></label>
+          <label>y (mm)<input id="ik_y" type="number" step="1" value="0" /></label>
+          <label>z (mm)<input id="ik_z" type="number" step="1" value="60" /></label>
+        </div>
+        <label class="inline">해 선택
+          <select id="ik_prefer">
+            <option value="auto">자동 (현재 자세와 가까운 해)</option>
+            <option value="up">팔꿈치 위 (elbow-up)</option>
+            <option value="down">팔꿈치 아래 (elbow-down)</option>
+          </select>
+        </label>
+        <div class="row-buttons">
+          <button id="btn_ik_solve" class="btn">계산만</button>
+          <button id="btn_ik_move" class="btn btn-primary">계산 후 이동</button>
+          <button id="btn_ik_clear" class="btn">목표 지우기</button>
+        </div>
+        <div id="ik_message" class="message"></div>
+        <h4>해 후보 (최대 4개)</h4>
+        <div class="table-scroll">
+          <table class="data">
+            <thead><tr><th>해</th><th>θ1</th><th>θ2</th><th>θ3</th><th>S1</th><th>S2</th><th>S3</th><th>오차</th></tr></thead>
+            <tbody id="ik_candidates"><tr><td colspan="8" class="muted">아직 계산하지 않았습니다.</td></tr></tbody>
+          </table>
+        </div>
+        <p class="desc">빨간 칸은 서보 범위(0~180°)를 벗어난 값, ★ 는 선택된 해입니다. 계산 과정은 [학습] 탭에서 볼 수 있습니다.</p>
+      </section>
+
+      <!-- Pick & Place -->
+      <section id="tab_pp" class="tab-body">
+        <h3>Pick &amp; Place 계획</h3>
+        <p class="desc">A 위치의 물체를 집어 B 위치로 옮길 때, 시간에 따라 각 서보를 어떻게 움직여야 하는지 계산합니다.</p>
+        <div class="grid3">
+          <label>A x<input id="pp_ax" type="number" step="1" /></label>
+          <label>A y<input id="pp_ay" type="number" step="1" /></label>
+          <label>A z<input id="pp_az" type="number" step="1" /></label>
+          <label>B x<input id="pp_bx" type="number" step="1" /></label>
+          <label>B y<input id="pp_by" type="number" step="1" /></label>
+          <label>B z<input id="pp_bz" type="number" step="1" /></label>
+          <label>접근 높이<input id="pp_approach" type="number" step="1" /></label>
+          <label>샘플 주기(ms)<input id="pp_sample" type="number" step="5" min="5" /></label>
+          <label>해 선택
+            <select id="pp_prefer">
+              <option value="auto">자동</option>
+              <option value="up">elbow-up</option>
+              <option value="down">elbow-down</option>
+            </select>
+          </label>
+        </div>
+        <label class="inline"><input id="pp_cartesian" type="checkbox" /> 하강/상승 구간을 직선(수직) 경로로 이동</label>
+        <details>
+          <summary>단계별 소요 시간 (ms)</summary>
+          <div id="pp_durations" class="grid3"></div>
+        </details>
+        <div class="row-buttons">
+          <button id="btn_pp_plan" class="btn btn-primary">계획 생성</button>
+          <button id="btn_pp_play" class="btn">재생</button>
+          <button id="btn_pp_csv" class="btn">CSV 내보내기</button>
+        </div>
+        <div id="pp_message" class="message"></div>
+        <h4>단계별 서보 제어 순서</h4>
+        <div class="table-scroll">
+          <table class="data">
+            <thead><tr><th>#</th><th>단계</th><th>시간(s)</th><th>목표 위치</th><th>S1</th><th>S2</th><th>S3</th><th>S4</th></tr></thead>
+            <tbody id="pp_steps"><tr><td colspan="8" class="muted">계획을 생성하세요.</td></tr></tbody>
+          </table>
+        </div>
+        <details>
+          <summary>전체 타임라인 표 (샘플 단위)</summary>
+          <div class="table-scroll tall">
+            <table class="data">
+              <thead><tr><th>t(ms)</th><th>단계</th><th>S1</th><th>S2</th><th>S3</th><th>S4</th><th>x</th><th>y</th><th>z</th></tr></thead>
+              <tbody id="pp_samples"></tbody>
+            </table>
+          </div>
+        </details>
+      </section>
+
+      <!-- 시퀀스 -->
+      <section id="tab_seq" class="tab-body">
+        <h3>키프레임 시퀀스</h3>
+        <p class="desc">원하는 자세를 저장하고 순서대로 재생합니다. 각 키프레임의 시간은 이전 자세에서 이 자세까지 걸리는 시간입니다.</p>
+        <div class="row-buttons">
+          <button id="btn_kf_add" class="btn">현재 자세 추가</button>
+          <button id="btn_kf_play" class="btn btn-primary">시퀀스 재생</button>
+          <button id="btn_kf_clear" class="btn">모두 삭제</button>
+        </div>
+        <div class="table-scroll">
+          <table class="data">
+            <thead><tr><th>#</th><th>S1</th><th>S2</th><th>S3</th><th>S4</th><th>시간(ms)</th><th></th></tr></thead>
+            <tbody id="kf_list"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- 학습 -->
+      <section id="tab_learn" class="tab-body">
+        <h3>학습</h3>
+        <div class="row-buttons">
+          <label class="inline"><input id="chk_frames" type="checkbox" /> 관절 좌표계(DH 프레임)</label>
+          <label class="inline"><input id="chk_workspace" type="checkbox" /> 작업 영역</label>
+          <label class="inline"><input id="chk_trail" type="checkbox" checked /> TCP 궤적선</label>
+        </div>
+
+        <h4>1. DH 파라미터 (현재 자세)</h4>
+        <table class="data">
+          <thead><tr><th>i</th><th>관절</th><th>θ (°)</th><th>d (mm)</th><th>a (mm)</th><th>α (°)</th></tr></thead>
+          <tbody id="learn_dh"></tbody>
+        </table>
+        <p class="desc">Tᵢ = Rot_z(θᵢ) · Trans_z(dᵢ) · Trans_x(aᵢ) · Rot_x(αᵢ), &nbsp; T₀₃ = T₁·T₂·T₃ 의 마지막 열이 TCP 위치입니다.
+          손목이 없으므로 집게는 링크2와 일직선이며 a₃ = L2 + L3 로 묶습니다.</p>
+
+        <h4>2. 정기구학 (FK) 계산 과정</h4>
+        <pre id="learn_fk" class="calc"></pre>
+
+        <h4>3. 역기구학 (IK) 계산 과정</h4>
+        <pre id="learn_ik" class="calc">[IK 제어] 탭에서 계산하면 과정이 표시됩니다.</pre>
+
+        <h4>4. 궤적 생성 원리</h4>
+        <div class="desc">
+          <p>Pick &amp; Place 는 10개 경유점(시작 → 접근 → 하강 → 집기 → 상승 → 이동 → 하강 → 놓기 → 상승 → 복귀)을 IK 로 서보각으로 바꾼 뒤 그 사이를 보간합니다.</p>
+          <p><b>관절 공간 보간</b>: q(t) = q₀ + (q₁ − q₀)·(3τ² − 2τ³), τ = t/T. 출발과 정지 속도가 0이라 부드럽게 움직이지만, 집게 끝은 곡선을 그립니다.</p>
+          <p><b>직선(Cartesian) 보간</b>: 위치를 직선으로 보간하고 샘플마다 IK 를 풉니다. 하강/상승에서 집게가 수직으로 움직입니다.</p>
+          <p>그래프에서 각 서보가 단계별로 어떻게 바뀌는지 확인하고, ⏮ ⏭ 버튼으로 한 단계씩 넘겨 보세요.</p>
+        </div>
+      </section>
+
+      <!-- 설정 -->
+      <section id="tab_settings" class="tab-body">
+        <h3>링크 길이 (mm)</h3>
+        <div class="grid2">
+          <label>베이스 높이 L0<input data-link="base_height" type="number" min="1" step="1" /></label>
+          <label>링크1 L1<input data-link="link1_length" type="number" min="1" step="1" /></label>
+          <label>링크2 L2<input data-link="link2_length" type="number" min="1" step="1" /></label>
+          <label>집게 길이 L3<input data-link="gripper_length" type="number" min="1" step="1" /></label>
+        </div>
+
+        <h3>관절 보정 (서보각 ↔ 관절각)</h3>
+        <p class="desc">관절각 = (서보각 − offset) × direction. 실제 로봇과 화면 자세가 다르면 여기서 맞춥니다.</p>
+        <table class="data">
+          <thead><tr><th>관절</th><th>offset (°)</th><th>direction</th></tr></thead>
+          <tbody id="joint_cfg_rows"></tbody>
+        </table>
+
+        <h3>집게</h3>
+        <div class="grid3">
+          <label>열림 각도<input id="cfg_grip_open" type="number" min="0" max="180" step="1" /></label>
+          <label>닫힘 각도<input id="cfg_grip_close" type="number" min="0" max="180" step="1" /></label>
+          <label>최대 벌림(mm)<input id="cfg_grip_gap" type="number" min="1" step="1" /></label>
+        </div>
+
+        <h3>Home 자세 / 속도</h3>
+        <div class="grid4">
+          <label>S1<input data-home="0" type="number" min="0" max="180" step="1" /></label>
+          <label>S2<input data-home="1" type="number" min="0" max="180" step="1" /></label>
+          <label>S3<input data-home="2" type="number" min="0" max="180" step="1" /></label>
+          <label>S4<input data-home="3" type="number" min="0" max="180" step="1" /></label>
+        </div>
+        <div class="row-buttons">
+          <button id="btn_set_home" class="btn">현재 자세를 Home 으로</button>
+          <label class="inline">수동 이동 속도(°/s)<input id="cfg_speed" type="number" min="10" max="1000" step="10" /></label>
+        </div>
+
+        <h3>저장 / 불러오기</h3>
+        <div class="row-buttons">
+          <button id="btn_save_json" class="btn">JSON 저장</button>
+          <button id="btn_load_json" class="btn">JSON 불러오기</button>
+          <button id="btn_reset" class="btn">기본값 복원</button>
+          <input id="file_json" type="file" accept=".json,application/json" hidden />
+        </div>
+
+        <h3>시리얼 로그</h3>
+        <pre id="serial_log" class="log"></pre>
+      </section>
+    </aside>
+  </main>
+
+</body>
+</html>
